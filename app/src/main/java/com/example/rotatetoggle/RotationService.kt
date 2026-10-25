@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ComponentName
+import android.service.quicksettings.TileService
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -40,6 +42,22 @@ class RotationService : Service() {
         private const val CHANNEL_ID = "rotate_toggle"
         private const val NOTIF_ID = 1
         private const val AUTO_HIDE_MS = 5000L
+
+        /** True only while this process has a live service. A killed process resets it. */
+        @Volatile
+        var running = false
+
+        fun start(ctx: Context) {
+            ctx.getSharedPreferences("rt", Context.MODE_PRIVATE)
+                .edit().putBoolean("enabled", true).apply()
+            ctx.startForegroundService(Intent(ctx, RotationService::class.java))
+        }
+
+        fun stop(ctx: Context) {
+            ctx.getSharedPreferences("rt", Context.MODE_PRIVATE)
+                .edit().putBoolean("enabled", false).apply()
+            ctx.stopService(Intent(ctx, RotationService::class.java))
+        }
     }
 
     private lateinit var wm: WindowManager
@@ -147,6 +165,17 @@ class RotationService : Service() {
             }
         }
         if (orientationListener.canDetectOrientation()) orientationListener.enable()
+
+        running = true
+        refreshTile()
+    }
+
+    private fun refreshTile() {
+        runCatching {
+            TileService.requestListeningState(
+                this, ComponentName(this, RotationTileService::class.java)
+            )
+        }
     }
 
     private fun currentRotation(): Int =
@@ -227,6 +256,8 @@ class RotationService : Service() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     override fun onDestroy() {
+        running = false
+        refreshTile()
         handler.removeCallbacksAndMessages(null)
         if (::orientationListener.isInitialized) orientationListener.disable()
         if (::dm.isInitialized) dm.unregisterDisplayListener(displayListener)

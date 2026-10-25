@@ -69,22 +69,22 @@ class MainActivity : Activity() {
 
     private fun refresh() {
         val canDraw = Settings.canDrawOverlays(this)
-        val running = prefs.getBoolean("enabled", false) && canDraw
+        val running = RotationService.running && canDraw
+        val wanted = prefs.getBoolean("enabled", false)
         grant.isEnabled = !canDraw
         toggle.isEnabled = canDraw
         toggle.text = if (running) "Stop" else "2. Start"
         status.text = when {
             !canDraw -> "Overlay permission needed."
             running -> "Running."
+            wanted -> "Stopped by the system. Tap Start, or use the Quick Settings tile."
             else -> "Ready."
         }
     }
 
     private fun toggleService() {
-        val svc = Intent(this, RotationService::class.java)
-        if (prefs.getBoolean("enabled", false)) {
-            prefs.edit().putBoolean("enabled", false).apply()
-            stopService(svc)
+        if (RotationService.running) {
+            RotationService.stop(this)
         } else {
             if (Build.VERSION.SDK_INT >= 33 &&
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -92,9 +92,10 @@ class MainActivity : Activity() {
             ) {
                 requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
             }
-            prefs.edit().putBoolean("enabled", true).apply()
-            startForegroundService(svc)
+            RotationService.start(this)
         }
+        // The service flips its state a moment after start/stop, so refresh slightly later too.
         refresh()
+        window.decorView.postDelayed({ refresh() }, 400)
     }
 }
